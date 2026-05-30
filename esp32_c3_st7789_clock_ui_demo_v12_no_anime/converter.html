@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GIF to ESP32 PROGMEM Converter</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #1e1e1e; color: #fff; }
+    .container { max-width: 600px; margin: 0 auto; background: #2d2d2d; padding: 20px; border-radius: 8px; }
+    canvas { background: #000; border: 1px solid #555; margin-top: 20px; }
+    button { padding: 10px 20px; background: #007acc; color: white; border: none; cursor: pointer; border-radius: 4px; margin-top: 10px;}
+    button:hover { background: #005f9e; }
+    #status { color: #fe6000; margin-top: 10px; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Tự động chuyển đổi file GIF cho ESP32</h2>
+    <p>Chỉ cần chọn <b>1 file .gif</b> (Bad Apple hoặc bất kỳ ảnh động nào). Trình duyệt sẽ tự động tách toàn bộ các khung hình (frames) và convert sang C-array siêu nhẹ.</p>
+    
+    <input type="file" id="fileInput" accept="image/gif">
+    <br>
+    <div id="status"></div>
+    <canvas id="preview" width="120" height="120" style="display:none;"></canvas>
+    <br>
+    <button id="downloadBtn" style="display:none;">Tải xuống anime_frames.h</button>
+  </div>
+
+  <!-- Load libgif-js at the end of body so it doesn't block UI rendering -->
+  <script src="https://cdn.jsdelivr.net/gh/buzzfeed/libgif-js@master/libgif.js" onerror="document.getElementById('status').innerText='Lỗi mạng: Không tải được thư viện phụ trợ. Vui lòng tắt trình chặn quảng cáo (Shields) hoặc thử trình duyệt khác!'"></script>
+  
+  <script>
+    // Wait until DOM and everything is ready
+    window.onload = function() {
+      const fileInput = document.getElementById('fileInput');
+      const canvas = document.getElementById('preview');
+      const ctx = canvas.getContext('2d');
+      const downloadBtn = document.getElementById('downloadBtn');
+      const statusDiv = document.getElementById('status');
+      
+      const TARGET_W = 120;
+      const TARGET_H = 120;
+      let framesData = [];
+
+      fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        statusDiv.style.color = '#fe6000';
+        statusDiv.innerText = "Đang tải ảnh GIF, vui lòng đợi vài giây...";
+        downloadBtn.style.display = 'none';
+        canvas.style.display = 'none';
+        framesData = [];
+        
+        if (typeof SuperGif === 'undefined') {
+          statusDiv.style.color = 'red';
+          statusDiv.innerText = "Lỗi nghiêm trọng: Trình duyệt của bạn đang chặn thư viện xử lý ảnh. Vui lòng tắt Khiên bảo vệ (Shields) trên Brave hoặc mở file này bằng Chrome/Edge!";
+          return;
+        }
+        
+        try {
+          // Create an image element for SuperGif
+          const img = document.createElement('img');
+          img.src = URL.createObjectURL(file);
+          img.setAttribute('rel:animated_src', img.src);
+          img.setAttribute('rel:auto_play', '0');
+          img.style.display = 'none';
+          document.body.appendChild(img);
+
+          const rub = new SuperGif({ gif: img });
+          
+          rub.load(async function() {
+            try {
+              statusDiv.innerText = "Đang xử lý từng khung hình...";
+              const totalFrames = rub.get_length();
+              
+              // Đã nâng giới hạn lên 250 frame (tương đương ~450KB Flash, rất an toàn cho ESP32-C3 4MB)
+              const maxFrames = 250;
+              let step = 1;
+              if (totalFrames > maxFrames) {
+                  step = Math.ceil(totalFrames / maxFrames);
+              }
+              
+              canvas.style.display = 'block';
+              let processedCount = 0;
+              
+              for (let i = 0; i < totalFrames; i++) {
+                if (i % step === 0 && processedCount < maxFrames) {
+                  rub.move_to(i);
+                  const frameCanvas = rub.get_canvas();
+                  
+                  ctx.fillStyle = '#FFFFFF';
+                  ctx.fillRect(0, 0, TARGET_W, TARGET_H);
+                  
+                  const scale = Math.max(TARGET_W / frameCanvas.width, TARGET_H / frameCanvas.height);
+                  const w = frameCanvas.width * scale;
+                  const h = frameCanvas.height * scale;
+                  const x = (TARGET_W - w) / 2;
+                  const y = (TARGET_H - h) / 2;
+                  
+                  ctx.drawImage(frameCanvas, x, y, w, h);
+                  
+                  const imageData = ctx.getImageData(0, 0, TARGET_W, TARGET_H);
+                  const data = imageData.data;
+                  const byteArray = [];
+                  
+                  let isBlack = true;
+                  let currentRun = 0;
+
+                  for (let py = 0; py < TARGET_H; py++) {
+                    for (let px = 0; px < TARGET_W; px++) {
+                      const idx = (py * TARGET_W + px) * 4;
+                      const r = data[idx];
+                      const g = data[idx+1];
+                      const b = data[idx+2];
+                      
+                      const brightness = (r + g + b) / 3;
+                      const pixelIsBlack = (brightness <= 128);
+                      
+                      if (pixelIsBlack === isBlack) {
+                          currentRun++;
+                          if (currentRun === 255) {
+                              byteArray.push(255);
+                              byteArray.push(0);
+                              currentRun = 0;
+                          }
+                      } else {
+                          byteArray.push(currentRun);
+                          isBlack = pixelIsBlack;
+                          currentRun = 1;
+                      }
+                      
+                      const bwColor = pixelIsBlack ? 0 : 255;
+                      data[idx] = data[idx+1] = data[idx+2] = bwColor;
+                      data[idx+3] = 255;
+                    }
+                  }
+                  byteArray.push(currentRun);
+                  ctx.putImageData(imageData, 0, 0);
+                  framesData.push(byteArray);
+                  processedCount++;
+                  
+                  // Allow UI to update
+                  await new Promise(r => setTimeout(r, 10));
+                }
+              }
+              
+              statusDiv.style.color = '#00FF00';
+              statusDiv.innerText = `Xử lý thành công! Đã trích xuất ${processedCount} khung hình.`;
+              downloadBtn.style.display = 'block';
+              
+            } catch (err) {
+              console.error(err);
+              statusDiv.style.color = 'red';
+              statusDiv.innerText = "Lỗi xử lý frame: " + err.toString();
+            }
+          });
+        } catch (err) {
+          console.error(err);
+          statusDiv.style.color = 'red';
+          statusDiv.innerText = "Lỗi tải ảnh: " + err.toString();
+        }
+      });
+
+      downloadBtn.addEventListener('click', () => {
+        let code = `#ifndef ANIME_FRAMES_H\n#define ANIME_FRAMES_H\n\n#include <Arduino.h>\n\n`;
+        code += `const int ANIME_FRAME_WIDTH = ${TARGET_W};\n`;
+        code += `const int ANIME_FRAME_HEIGHT = ${TARGET_H};\n`;
+        code += `const int ANIME_FRAME_COUNT = ${framesData.length};\n\n`;
+        
+        framesData.forEach((frame, i) => {
+          code += `const unsigned char PROGMEM anime_frame_${i}[${frame.length}] = {\n`;
+          for (let j = 0; j < frame.length; j++) {
+            code += `0x${frame[j].toString(16).padStart(2, '0').toUpperCase()}, `;
+            if ((j + 1) % 16 === 0) code += '\n';
+          }
+          code += `};\n\n`;
+        });
+        
+        code += `const unsigned char* const anime_frames[] PROGMEM = {\n`;
+        framesData.forEach((_, i) => {
+          code += `  anime_frame_${i},\n`;
+        });
+        code += `};\n\n#endif\n`;
+        
+        const blob = new Blob([code], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'anime_frames.h';
+        a.click();
+      });
+    };
+  </script>
+</body>
+</html>

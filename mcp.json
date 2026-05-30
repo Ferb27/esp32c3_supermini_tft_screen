@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pixel-mcp": {
+      "command": "E:\\project\\esp32c3_supermini_tft_screen\\mcp\\pixel-mcp.exe",
+      "args": []
+    }
+  }
+}
