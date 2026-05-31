@@ -540,18 +540,18 @@ void UIRenderer::updateDynamicUI(const WeatherData& weather, const DateTimeData&
   _prevWeather = weather;
 }
 
-// Helper: vẽ đường thẳng siêu dày bo tròn 2 đầu (Rất phù hợp để vẽ tay mèo)
-static void drawThickLine(Adafruit_ST7789& tft, int x0, int y0, int x1, int y1, int r, uint16_t color) {
-  int dx = abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-  int dy = -abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-  int err = dx + dy, e2;
-  while (true) {
-    tft.fillCircle(x0, y0, r, color);
-    if (x0 == x1 && y0 == y1) break;
-    e2 = 2 * err;
-    if (e2 >= dy) { err += dy; x0 += sx; }
-    if (e2 <= dx) { err += dx; y0 += sy; }
-  }
+// Helper: vẽ hình thoi bầu bầu (rounded diamond / teardrop paw shape)
+// Dùng 2 tam giác ghép + 1 hình tròn ở giữa để tạo dáng giọt nước
+static void drawPaw(Adafruit_ST7789& tft, int cx, int cy, int w, int h, uint16_t outlineColor, uint16_t fillColor) {
+  // Viền đen (to hơn 2px mỗi chiều)
+  tft.fillCircle(cx, cy, w/2 + 2, outlineColor);
+  tft.fillTriangle(cx - w/2 - 2, cy, cx, cy - h/2 - 2, cx + w/2 + 2, cy, outlineColor); // Mũi trên
+  tft.fillTriangle(cx - w/2 - 2, cy, cx, cy + h/2 + 2, cx + w/2 + 2, cy, outlineColor); // Mũi dưới
+  
+  // Ruột trắng
+  tft.fillCircle(cx, cy, w/2, fillColor);
+  tft.fillTriangle(cx - w/2, cy, cx, cy - h/2, cx + w/2, cy, fillColor); // Mũi trên
+  tft.fillTriangle(cx - w/2, cy, cx, cy + h/2, cx + w/2, cy, fillColor); // Mũi dưới
 }
 
 void UIRenderer::updateBongoAnimation(int frameState) {
@@ -603,7 +603,7 @@ void UIRenderer::updateBongoAnimation(int frameState) {
   int kbX = 30, kbY = tableY - 12, kbW = 180, kbH = 32;
   // Khung bàn phím bo viền
   _tft.fillRoundRect(kbX, kbY, kbW, kbH, 6, 0x0000); 
-  _tft.fillRoundRect(kbX+2, kbY+2, kbW-4, kbH-4, 4, 0xBDD7); // Xám ánh xanh dương xịn xò
+  _tft.fillRoundRect(kbX+2, kbY+2, kbW-4, kbH-4, 4, 0xBDD7);
   
   // Chi tiết các phím bấm vuông vức
   int keyW = 12, keyH = 10;
@@ -616,55 +616,39 @@ void UIRenderer::updateBongoAnimation(int frameState) {
     }
   }
 
-  // === 3. BÀN TAY (Nhỏ gọn, nối liền thân không có viền đen ở nách) ===
+  // === 3. BÀN TAY (Hình thoi bầu bầu, di chuyển lên/xuống) ===
   bool leftDown  = (frameState == 1 || frameState == 3);
   bool rightDown = (frameState == 2 || frameState == 3);
-  uint16_t pinkColor = 0xFBEF; 
+  uint16_t pinkColor = 0xFBEF;
+  int pawW = 20; // Chiều rộng bàn tay
+  int pawH = 26; // Chiều cao bàn tay (dài hơn rộng -> hình thoi dọc)
   
   // -- TAY TRÁI --
-  int l_px0, l_py0, l_px1, l_py1;
+  int lpX = catX - 48;
   if (leftDown) {
-    l_px0 = catX - 30; l_py0 = catY + 12; // Vai (Nằm sâu trong thân)
-    l_px1 = kbX + 25;  l_py1 = kbY + 4;   // Tay đập phím
+    int lpY = kbY + 6;
+    drawPaw(_tft, lpX, lpY, pawW, pawH, 0x0000, 0xFFFF);
   } else {
-    l_px0 = catX - 30; l_py0 = catY - 2;  // Vai 
-    l_px1 = catX - 48; l_py1 = catY - 18; // Tay giơ lên
+    int lpY = tableY - 20;
+    drawPaw(_tft, lpX, lpY, pawW, pawH, 0x0000, 0xFFFF);
+    // Nệm thịt hồng (khi giơ lên ngửa tay)
+    _tft.fillCircle(lpX, lpY + 2, 5, pinkColor);     // Đệm to
+    _tft.fillCircle(lpX - 5, lpY - 4, 2, pinkColor);  // Ngón 1
+    _tft.fillCircle(lpX,     lpY - 6, 2, pinkColor);  // Ngón 2
+    _tft.fillCircle(lpX + 5, lpY - 4, 2, pinkColor);  // Ngón 3
   }
   
-  // Vẽ tay
-  drawThickLine(_tft, l_px0, l_py0, l_px1, l_py1, 11, 0x0000); // Viền đen
-  drawThickLine(_tft, l_px0, l_py0, l_px1, l_py1, 9, 0xFFFF);  // Ruột trắng
-  
-  // Tẩy viền đen ở nách (Merge Patch)
-  _tft.fillCircle(l_px0, l_py0, 11, 0xFFFF); 
-  
-  if (!leftDown) {
-    // Vẽ nệm thịt tập trung ở phần ngón (px1)
-    _tft.fillCircle(l_px1 + 3, l_py1 + 4, 4, pinkColor); // Đệm to
-    _tft.fillCircle(l_px1 - 3, l_py1 + 6, 2, pinkColor); // Ngón 1
-    _tft.fillCircle(l_px1 + 1, l_py1 - 2, 2, pinkColor); // Ngón 2
-    _tft.fillCircle(l_px1 + 8, l_py1 + 1, 2, pinkColor); // Ngón 3
-  }
-
   // -- TAY PHẢI --
-  int r_px0, r_py0, r_px1, r_py1;
+  int rpX = catX + 48;
   if (rightDown) {
-    r_px0 = catX + 30; r_py0 = catY + 12;
-    r_px1 = kbX + kbW - 25; r_py1 = kbY + 4;
+    int rpY = kbY + 6;
+    drawPaw(_tft, rpX, rpY, pawW, pawH, 0x0000, 0xFFFF);
   } else {
-    r_px0 = catX + 30; r_py0 = catY - 2;
-    r_px1 = catX + 48; r_py1 = catY - 18;
-  }
-  
-  drawThickLine(_tft, r_px0, r_py0, r_px1, r_py1, 11, 0x0000);
-  drawThickLine(_tft, r_px0, r_py0, r_px1, r_py1, 9, 0xFFFF);
-  
-  _tft.fillCircle(r_px0, r_py0, 11, 0xFFFF);
-  
-  if (!rightDown) {
-    _tft.fillCircle(r_px1 - 3, r_py1 + 4, 4, pinkColor); 
-    _tft.fillCircle(r_px1 + 3, r_py1 + 6, 2, pinkColor);
-    _tft.fillCircle(r_px1 - 1, r_py1 - 2, 2, pinkColor);
-    _tft.fillCircle(r_px1 - 8, r_py1 + 1, 2, pinkColor);
+    int rpY = tableY - 20;
+    drawPaw(_tft, rpX, rpY, pawW, pawH, 0x0000, 0xFFFF);
+    _tft.fillCircle(rpX, rpY + 2, 5, pinkColor);
+    _tft.fillCircle(rpX - 5, rpY - 4, 2, pinkColor);
+    _tft.fillCircle(rpX,     rpY - 6, 2, pinkColor);
+    _tft.fillCircle(rpX + 5, rpY - 4, 2, pinkColor);
   }
 }

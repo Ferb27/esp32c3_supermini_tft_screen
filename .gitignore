@@ -37,3 +37,6 @@ desktop.ini
 # Generated / Cache
 generated/
 *.generated.*
+
+# Third-party tools
+mcp/
