@@ -14,6 +14,7 @@
 | **Bad Apple / GIF** | Animation đằng sau mặt đồng hồ, dùng RLE nén frame tiết kiệm Flash |
 | **Bongo Cat** | Kết nối PC qua Serial → gõ phím thì mèo gõ theo real-time |
 | **Beat Visualizer** | (v15) Hiển thị nhịp gõ phím dạng thanh nhạc |
+| **Calendar Popup** | (v16) Popup lịch tháng — xem ngày/tháng, highlight hôm nay |
 | **Không blocking** | Toàn bộ code dùng `millis()`, không `delay()` — mượt mà 100% |
 
 ---
@@ -40,9 +41,9 @@
 | **RST** | **GPIO3** | Reset |
 | **DC** | **GPIO2** | Data/Command |
 | **CS** | **GPIO7** | Chip Select |
-| **BLK** | **GPIO8** (v15) / **GPIO10** (v10-v14) | Backlight (có thể PWM) |
+| **BLK** | **GPIO8** (v15-v16) / **GPIO10** (v10-v14) | Backlight (có thể PWM) |
 
-> **Về BLK:** GPIO8 (v15) hoặc GPIO10 (v10-v14) cho phép điều chỉnh độ sáng bằng PWM. Nếu muốn sáng max, cắm thẳng vào 3V3.
+> **Về BLK:** GPIO8 (v15-v16) hoặc GPIO10 (v10-v14) cho phép điều chỉnh độ sáng bằng PWM. Nếu muốn sáng max, cắm thẳng vào 3V3.
 
 ---
 
@@ -73,6 +74,11 @@
 2. Upload lên ESP32-C3
 3. Chạy bên PC: `BongoClient_v15_beat_visualizer/app.py`
 
+### Với đồng hồ + Calendar Popup
+1. Mở `esp32c3_clock_v16_calendar_popup/esp32c3_clock_v16_calendar_popup.ino`
+2. Upload lên ESP32-C3
+3. Chạy bên PC: `BongoClient_v15_beat_visualizer/app.py`
+
 > Nếu lỗi upload, giữ nút **BOOT**, nhấn Reset rồi thả BOOT, upload lại.
 
 ---
@@ -97,14 +103,15 @@
 | `esp32c3_clock_v12_bongo_cat_bitmap` | + Bongo Cat dạng bitmap sprites |
 | `esp32c3_clock_v13_bongo_cat_png_sprites` | + Bongo Cat dùng PNG sprites |
 | `esp32c3_clock_v14_bongo_cat_native_geometry` | **★ Bongo Cat Flat Design** — vẽ bằng hình khối, không tốn Flash |
-| `esp32c3_clock_v15_beat_visualizer` | **★ Mới nhất** — Beat Visualizer + thanh nhạc theo nhịp gõ phím |
+| `esp32c3_clock_v15_beat_visualizer` | **★ Beat Visualizer** — thanh nhạc theo nhịp gõ phím |
+| `esp32c3_clock_v16_calendar_popup` | **★ Calendar Popup** — popup lịch tháng highlight hôm nay |
 
 ### 🔸 Ứng dụng PC (Python)
 
 | Thư mục | Mô tả |
 |---------|-------|
 | `BongoClient_v12_v13_v14` | Python app đếm phím → Serial (dùng với v12-v14) |
-| `BongoClient_v15_beat_visualizer` | Python app đếm phím → gửi cường độ nhịp (dùng với v15) |
+| `BongoClient_v15_beat_visualizer` | Python app đếm phím → gửi cường độ nhịp (dùng với v15-v16) |
 
 ### 🔸 Khác
 
