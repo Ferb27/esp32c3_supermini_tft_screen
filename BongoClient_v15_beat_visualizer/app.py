@@ -33,9 +33,27 @@ key_press_lock = threading.Lock()  # Thread-safe lock
 
 def find_esp32_port():
     ports = serial.tools.list_ports.comports()
+    
+    # Priority 1: Specific USB-to-UART bridge chips
     for port, desc, hwid in sorted(ports):
-        if "CH340" in desc or "CP210" in desc or "USB" in desc or "Serial" in desc:
+        if "CH340" in desc or "CP210" in desc:
             return port
+            
+    # Priority 2: ESP32-C3 Native USB CDC (usually "USB Serial Device" or "USB JTAG")
+    for port, desc, hwid in sorted(ports):
+        # Ignore Intel AMT and Standard Serial over Bluetooth
+        if "AMT" in desc or "Standard" in desc or "Bluetooth" in desc or "Communications Port" in desc:
+            continue
+        if "USB Serial Device" in desc or "JTAG" in desc:
+            return port
+            
+    # Priority 3: Any USB serial port (last resort)
+    for port, desc, hwid in sorted(ports):
+        if "AMT" in desc or "Standard" in desc or "Bluetooth" in desc or "Communications Port" in desc:
+            continue
+        if "USB" in desc or "Serial" in desc:
+            return port
+            
     return None
 
 def connect_serial():
@@ -78,11 +96,12 @@ def serial_worker():
         time.sleep(0.005)
 
 # --- AUDIO VISUALIZER WORKER ---
-def get_system_audio_peak():
+def init_audio_meter():
     if not audio_libraries_available:
-        return 0.0
+        return None
     try:
         from pycaw.pycaw import IMMDeviceEnumerator
+        from pycaw.pycaw import IAudioMeterInformation
         import comtypes
         
         CLSID_MMDeviceEnumerator = comtypes.GUID("{BCDE0395-E52F-467C-8E3D-C4579291692E}")
@@ -97,10 +116,10 @@ def get_system_audio_peak():
         
         interface = speakers.Activate(IAudioMeterInformation._iid_, CLSCTX_ALL, None)
         meter = ctypes.cast(interface, ctypes.POINTER(IAudioMeterInformation))
-        return meter.GetPeakValue()
+        return meter
     except Exception as e:
-        logging.error(f"get_system_audio_peak error inner: {e}")
-        return 0.0
+        logging.error(f"init_audio_meter error: {e}")
+        return None
 
 def audio_worker():
     global ser, connected, running
@@ -114,10 +133,20 @@ def audio_worker():
         logging.info("Audio worker initialized COM.")
         last_val = -1
         
+        meter = init_audio_meter()
+        
         while running:
             if connected and ser and ser.is_open:
-                val_float = get_system_audio_peak()
-                val_int = int(val_float * 255)
+                val_int = 0
+                if meter:
+                    try:
+                        val_float = meter.GetPeakValue()
+                        val_int = int(val_float * 255)
+                    except Exception as e:
+                        # If device disconnected or invalidated, try to reinitialize
+                        logging.error(f"GetPeakValue error: {e}. Reinitializing...")
+                        meter = init_audio_meter()
+                
                 if val_int != last_val:
                     try:
                         ser.write(f"A:{val_int}\n".encode())

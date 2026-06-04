@@ -651,3 +651,113 @@ void UIRenderer::updateBongoAnimation(int frameState, int audioAmp) {
   drawScene(canvas, 90);
   _tft.drawRGBBitmap(0, 90, canvas->getBuffer(), 240, 57);
 }
+
+// === LỊCH THU NHỎ (CALENDAR POPUP) ===
+int getDayOfWeek(int d, int m, int y) {
+  static int t[] = { 0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4 };
+  y -= m < 3;
+  return ( y + y/4 - y/100 + y/400 + t[m-1] + d) % 7;
+}
+
+int getDaysInMonth(int m, int y) {
+  if (m == 2) {
+    return ((y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)) ? 29 : 28;
+  }
+  if (m == 4 || m == 6 || m == 9 || m == 11) return 30;
+  return 31;
+}
+
+void UIRenderer::drawCalendarOverlay(const DateTimeData& time) {
+  int calWidth = 236;
+  int calHeight = 236;
+  int startX = 2;
+  int startY = 2;
+  
+  // 1. Soft Drop Shadow (Tạo độ sâu nhiều lớp)
+  _tft.fillRoundRect(startX + 3, startY + 3, calWidth, calHeight, 14, 0x0000); 
+  _tft.fillRoundRect(startX + 1, startY + 1, calWidth, calHeight, 14, 0x0841); 
+  
+  // 2. Main Glass Background (Deep Liquid Navy/Charcoal)
+  uint16_t bgColor = 0x1104; // Tông nền xanh đen siêu tối, tạo cảm giác kính mờ (Frosted Dark Glass)
+  _tft.fillRoundRect(startX, startY, calWidth, calHeight, 14, bgColor); 
+  
+  // 3. 3D Bevel & Glass Edge Highlights (Hiệu ứng viền nổi và độ dày của kính)
+  // Viền sáng bắt sáng viền ngoài cùng
+  _tft.drawRoundRect(startX, startY, calWidth, calHeight, 14, 0x4A69); 
+  // Rãnh tối tạo độ sâu (Độ dày kính)
+  _tft.drawRoundRect(startX + 1, startY + 1, calWidth - 2, calHeight - 2, 13, 0x0000);
+  // Viền hắt sáng nhẹ bên trong
+  _tft.drawRoundRect(startX + 2, startY + 2, calWidth - 4, calHeight - 4, 12, 0x2945);
+
+  // 4. Liquid Shine (Vệt phản quang ánh sáng ở cạnh trên cùng)
+  _tft.drawFastHLine(startX + 20, startY + 3, calWidth - 40, 0x7BCF); // Vệt sáng mờ
+  _tft.drawFastHLine(startX + 30, startY + 4, calWidth - 60, 0xCE59); // Vệt sáng gắt (Glossy highlight)
+
+  // 5. Header: Month and Year
+  const char* monthNames[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN", 
+                              "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"};
+  int mIdx = constrain(time.month - 1, 0, 11);
+  
+  _tft.setTextColor(0xFFFF); 
+  _tft.setTextSize(3); // Large font for premium feel
+  String headerText = String(monthNames[mIdx]) + " " + String(time.year);
+  int textW = headerText.length() * 18;
+  _tft.setCursor(startX + (calWidth - textW) / 2, startY + 16);
+  _tft.print(headerText);
+  
+  // Subtle separator line
+  _tft.drawFastHLine(startX + 20, startY + 48, calWidth - 40, 0x39E7); 
+  
+  // 4. Days of the week headers
+  _tft.setTextSize(1);
+  const char* days[] = {"S", "M", "T", "W", "T", "F", "S"};
+  int cellW = 32;
+  int cellH = 28;
+  
+  int gridX = startX + (calWidth - (7 * cellW)) / 2;
+  int gridY = startY + 60;
+  
+  uint16_t weekendColor = 0xFA27; // Soft Red
+  uint16_t weekdayHeaderColor = 0x8410; // Muted Gray
+  
+  for (int i = 0; i < 7; i++) {
+    if (i == 0 || i == 6) _tft.setTextColor(weekendColor); 
+    else _tft.setTextColor(weekdayHeaderColor); 
+    
+    int charW = 6;
+    _tft.setCursor(gridX + i * cellW + (cellW - charW) / 2, gridY);
+    _tft.print(days[i]);
+  }
+  
+  // 5. Calendar Days Grid
+  gridY += 20; // Shift down for the numbers
+  int daysInMonth = getDaysInMonth(time.month, time.year);
+  int firstDay = getDayOfWeek(1, time.month, time.year);
+  
+  _tft.setTextSize(2);
+  int row = 0;
+  for (int d = 1; d <= daysInMonth; d++) {
+    int col = (firstDay + d - 1) % 7;
+    if (d > 1 && col == 0) row++;
+    
+    int cx = gridX + col * cellW + cellW / 2;
+    int cy = gridY + row * cellH + cellH / 2;
+    
+    // Highlight current day with a beautiful solid circle
+    if (d == time.day) {
+      _tft.fillCircle(cx, cy, 13, 0xF800); // Bright Red for today
+      _tft.setTextColor(0xFFFF); 
+    } else {
+      if (col == 0 || col == 6) _tft.setTextColor(weekendColor);
+      else _tft.setTextColor(0xFFFF);
+    }
+    
+    char dayStr[3];
+    snprintf(dayStr, sizeof(dayStr), "%d", d);
+    int dw = (d < 10) ? 12 : 24; // Font size 2 width is 12px per char
+    
+    // Y-offset -7 to perfectly center Size 2 text vertically
+    _tft.setCursor(cx - dw / 2, cy - 7);
+    _tft.print(dayStr);
+  }
+}
